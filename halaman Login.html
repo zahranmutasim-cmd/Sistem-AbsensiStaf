@@ -340,7 +340,7 @@
 
             <!-- Bottom footer -->
             <div class="absolute bottom-6 text-center">
-                <p class="text-blue-300/50 text-xs">v2.0.0 • Zran Corporation</p>
+                <p class="text-blue-300/50 text-xs">v1.0.0 • Zran Corporation</p>
             </div>
         </div>
 
@@ -464,6 +464,25 @@
     <script src="JS/firebase-config.js"></script>
 
     <script>
+        // ========== Auto-redirect jika sudah login ==========
+        (function() {
+            const saved = localStorage.getItem('loggedInUser');
+            if (saved) {
+                try {
+                    const user = JSON.parse(saved);
+                    if (user.role === 'admin') {
+                        window.location.href = 'dashboard.html';
+                        return;
+                    } else if (user.role === 'staf') {
+                        window.location.href = 'staf-absensi.html';
+                        return;
+                    }
+                } catch(e) {
+                    localStorage.removeItem('loggedInUser');
+                }
+            }
+        })();
+
         // Initialize Lucide icons
         lucide.createIcons();
 
@@ -536,7 +555,7 @@
 
                 if (user) {
                     // Save user session
-                    sessionStorage.setItem('loggedInUser', JSON.stringify({
+                    localStorage.setItem('loggedInUser', JSON.stringify({
                         username: user.username,
                         nama: user.nama,
                         role: user.role,

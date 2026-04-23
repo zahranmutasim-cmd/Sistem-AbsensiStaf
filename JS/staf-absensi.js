@@ -22,7 +22,7 @@ const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', async () => {
     // Load user session
-    const userData = sessionStorage.getItem('loggedInUser');
+    const userData = localStorage.getItem('loggedInUser');
     if (!userData) {
         window.location.href = 'halaman Login.html';
         return;
@@ -483,6 +483,7 @@ async function updateStats() {
 // ==================== LOGOUT ====================
 function handleLogout() {
     if (confirm('Yakin ingin keluar?')) {
+        localStorage.removeItem('loggedInUser');
         window.location.href = 'halaman Login.html';
     }
 }

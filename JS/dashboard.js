@@ -292,6 +292,7 @@ async function renderTable() {
 // ========== Logout Handler ==========
 function handleLogout() {
     if (confirm('Apakah Anda yakin ingin keluar?')) {
+        localStorage.removeItem('loggedInUser');
         window.location.href = 'halaman Login.html';
     }
 }
