@@ -11,8 +11,39 @@ const avatarColors = [
 
 let rekapData = [];
 
+// ========== Auth Check & User Profile ==========
+function checkAuth() {
+    const raw = localStorage.getItem('loggedInUser');
+    if (!raw) {
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+    try {
+        const user = JSON.parse(raw);
+        if (user.role === 'staf') {
+            window.location.href = 'staf-absensi.html';
+            return null;
+        }
+        const nameEl = document.getElementById('adminName');
+        const roleEl = document.getElementById('adminRole');
+        const avatarEl = document.getElementById('adminAvatar');
+        if (nameEl) nameEl.textContent = user.nama || 'Administrator';
+        if (roleEl) roleEl.textContent = (user.role === 'admin' ? 'Administrator' : user.role);
+        if (avatarEl) {
+            const initials = (user.nama || 'AD').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarEl.textContent = initials;
+        }
+        return user;
+    } catch (e) {
+        localStorage.removeItem('loggedInUser');
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+}
+
 // ========== Init ==========
 document.addEventListener('DOMContentLoaded', () => {
+    if (!checkAuth()) return;
     lucide.createIcons();
     initSidebar();
     initProfileDropdown();

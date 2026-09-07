@@ -15,15 +15,51 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+let db = null;
+let usersRef = null;
+let karyawanRef = null;
+let attendancesRef = null;
+let isFirestoreAvailable = null; // null: testing, true: connected, false: fallback local
 
-// Initialize Firestore
-const db = firebase.firestore();
+try {
+    if (typeof firebase !== 'undefined') {
+        if (firebase.apps.length === 0) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+        usersRef = db.collection('users');
+        karyawanRef = db.collection('karyawan');
+        attendancesRef = db.collection('attendances');
+    }
+} catch (e) {
+    console.warn('Firebase initialization warning:', e);
+    isFirestoreAvailable = false;
+}
 
-// ==================== COLLECTION REFERENCES ====================
-const usersRef = db.collection('users');
-const karyawanRef = db.collection('karyawan');
-const attendancesRef = db.collection('attendances');
+// LocalStorage Keys for Hybrid Storage
+const LOCAL_STORAGE_KEYS = {
+    USERS: 'ZRAN_STORAGE_USERS_V2',
+    KARYAWAN: 'ZRAN_STORAGE_KARYAWAN_V2',
+    ATTENDANCES: 'ZRAN_STORAGE_ATTENDANCES_V2'
+};
+
+function getLocalData(key) {
+    try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function setLocalData(key, data) {
+    try {
+        localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+        console.error('LocalStorage write error:', e);
+    }
+}
+
 
 // ==================== SEED DATA (Default) ====================
 // These will be uploaded ONCE if the collections are empty
@@ -108,140 +144,283 @@ const SEED_ATTENDANCES = [
     { nama: 'Joko Widodo', departemen: 'Marketing', tanggal: '07/03/2026', jamMasuk: '', jamKeluar: '', status: 'Sakit' },
 ];
 
-// ==================== SEED DATABASE ====================
-// Called once to populate empty Firestore collections
-async function seedDatabase() {
+// ==================== SEED DATABASE & LOCAL STORAGE ====================
+function initLocalStorage() {
     try {
-        // Check if users collection already has data
+        if (!localStorage.getItem(LOCAL_STORAGE_KEYS.USERS)) {
+            localStorage.setItem(LOCAL_STORAGE_KEYS.USERS, JSON.stringify(SEED_USERS));
+        }
+        if (!localStorage.getItem(LOCAL_STORAGE_KEYS.KARYAWAN)) {
+            localStorage.setItem(LOCAL_STORAGE_KEYS.KARYAWAN, JSON.stringify(SEED_KARYAWAN));
+        }
+        if (!localStorage.getItem(LOCAL_STORAGE_KEYS.ATTENDANCES)) {
+            localStorage.setItem(LOCAL_STORAGE_KEYS.ATTENDANCES, JSON.stringify(SEED_ATTENDANCES));
+        }
+    } catch (e) {
+        console.warn('LocalStorage initialization warning:', e);
+    }
+}
+
+// Inisialisasi awal penyimpanan lokal
+initLocalStorage();
+
+async function seedDatabase() {
+    initLocalStorage();
+
+    if (!usersRef || isFirestoreAvailable === false) {
+        isFirestoreAvailable = false;
+        return;
+    }
+
+    try {
         const usersSnapshot = await usersRef.limit(1).get();
+        isFirestoreAvailable = true;
+
         if (usersSnapshot.empty) {
-            console.log('🌱 Seeding users...');
+            console.log('🌱 Seeding users to Cloud Firestore...');
             const batch1 = db.batch();
             SEED_USERS.forEach(user => {
                 const docRef = usersRef.doc(user.username);
                 batch1.set(docRef, user);
             });
             await batch1.commit();
-            console.log('✅ Users seeded successfully');
         }
 
-        // Check if karyawan collection already has data
         const karyawanSnapshot = await karyawanRef.limit(1).get();
         if (karyawanSnapshot.empty) {
-            console.log('🌱 Seeding karyawan...');
+            console.log('🌱 Seeding karyawan to Cloud Firestore...');
             const batch2 = db.batch();
             SEED_KARYAWAN.forEach(k => {
                 const docRef = karyawanRef.doc(k.id);
                 batch2.set(docRef, k);
             });
             await batch2.commit();
-            console.log('✅ Karyawan seeded successfully');
         }
 
-        // Check if attendances collection already has data
         const attendancesSnapshot = await attendancesRef.limit(1).get();
         if (attendancesSnapshot.empty) {
-            console.log('🌱 Seeding attendances...');
-            // Batch max 500 operations
+            console.log('🌱 Seeding attendances to Cloud Firestore...');
             const batch3 = db.batch();
             SEED_ATTENDANCES.forEach((att, idx) => {
                 const docRef = attendancesRef.doc(`ABS-${String(idx + 1).padStart(3, '0')}`);
                 batch3.set(docRef, att);
             });
             await batch3.commit();
-            console.log('✅ Attendances seeded successfully');
         }
 
-        console.log('🎉 Database ready!');
+        console.log('🎉 Cloud Firestore ready and synced!');
     } catch (error) {
-        console.error('❌ Seed error:', error);
+        console.warn('⚠️ Cloud Firestore tidak dapat diakses (Security Rules kedaluwarsa atau Offline). Menggunakan mode LocalStorage persisten. Error:', error.message || error);
+        isFirestoreAvailable = false;
     }
 }
 
-// ==================== HELPER: DB Operations ====================
+// ==================== HELPER: DB Operations (Hybrid Engine) ====================
 
 // --- USERS ---
 async function DB_findUser(username, password) {
-    const doc = await usersRef.doc(username).get();
-    if (!doc.exists) return null;
-    const data = doc.data();
-    if (data.password === password) return data;
-    return null;
+    const cleanUser = (username || '').trim().toLowerCase();
+    const cleanPass = (password || '').trim();
+
+    if (isFirestoreAvailable !== false && usersRef) {
+        try {
+            const doc = await usersRef.doc(cleanUser).get();
+            if (doc.exists) {
+                const data = doc.data();
+                if (data.password === cleanPass) {
+                    isFirestoreAvailable = true;
+                    return data;
+                }
+                return null;
+            }
+        } catch (e) {
+            console.warn('DB_findUser Firestore error, fallback to LocalStorage:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
+
+    const users = getLocalData(LOCAL_STORAGE_KEYS.USERS);
+    const found = users.find(u => u.username.toLowerCase() === cleanUser && u.password === cleanPass);
+    return found || null;
 }
 
 // --- KARYAWAN ---
 async function DB_getAllKaryawan() {
-    const snapshot = await karyawanRef.orderBy('id').get();
-    return snapshot.docs.map(doc => doc.data());
+    if (isFirestoreAvailable !== false && karyawanRef) {
+        try {
+            const snapshot = await karyawanRef.orderBy('id').get();
+            const list = snapshot.docs.map(doc => doc.data());
+            isFirestoreAvailable = true;
+            setLocalData(LOCAL_STORAGE_KEYS.KARYAWAN, list);
+            return list;
+        } catch (e) {
+            console.warn('DB_getAllKaryawan Firestore error, fallback to LocalStorage:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
+
+    const list = getLocalData(LOCAL_STORAGE_KEYS.KARYAWAN);
+    list.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+    return list;
 }
 
 async function DB_addKaryawan(data) {
-    await karyawanRef.doc(data.id).set(data);
+    const list = getLocalData(LOCAL_STORAGE_KEYS.KARYAWAN);
+    const existingIdx = list.findIndex(k => k.id === data.id);
+    if (existingIdx >= 0) {
+        list[existingIdx] = data;
+    } else {
+        list.push(data);
+    }
+    setLocalData(LOCAL_STORAGE_KEYS.KARYAWAN, list);
+
+    if (isFirestoreAvailable !== false && karyawanRef) {
+        try {
+            await karyawanRef.doc(data.id).set(data);
+        } catch (e) {
+            console.warn('DB_addKaryawan Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
 }
 
 async function DB_updateKaryawan(id, data) {
-    await karyawanRef.doc(id).update(data);
+    const list = getLocalData(LOCAL_STORAGE_KEYS.KARYAWAN);
+    const idx = list.findIndex(k => k.id === id);
+    if (idx >= 0) {
+        list[idx] = { ...list[idx], ...data };
+        setLocalData(LOCAL_STORAGE_KEYS.KARYAWAN, list);
+    }
+
+    if (isFirestoreAvailable !== false && karyawanRef) {
+        try {
+            await karyawanRef.doc(id).update(data);
+        } catch (e) {
+            console.warn('DB_updateKaryawan Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
 }
 
 async function DB_deleteKaryawan(id) {
-    await karyawanRef.doc(id).delete();
+    let list = getLocalData(LOCAL_STORAGE_KEYS.KARYAWAN);
+    list = list.filter(k => k.id !== id);
+    setLocalData(LOCAL_STORAGE_KEYS.KARYAWAN, list);
+
+    if (isFirestoreAvailable !== false && karyawanRef) {
+        try {
+            await karyawanRef.doc(id).delete();
+        } catch (e) {
+            console.warn('DB_deleteKaryawan Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
 }
 
 async function DB_getKaryawanCount() {
-    const snapshot = await karyawanRef.get();
-    return snapshot.size;
+    const list = await DB_getAllKaryawan();
+    return list.length;
 }
 
 // --- ATTENDANCES ---
 async function DB_getAllAttendances() {
-    const snapshot = await attendancesRef.get();
-    return snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+    if (isFirestoreAvailable !== false && attendancesRef) {
+        try {
+            const snapshot = await attendancesRef.get();
+            const list = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+            isFirestoreAvailable = true;
+            setLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES, list);
+            return list;
+        } catch (e) {
+            console.warn('DB_getAllAttendances Firestore error, fallback to LocalStorage:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
+
+    return getLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES);
 }
 
 async function DB_getAttendancesByDate(tanggal) {
-    // tanggal format: "DD/MM/YYYY"
-    const snapshot = await attendancesRef.where('tanggal', '==', tanggal).get();
-    return snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+    const all = await DB_getAllAttendances();
+    return all.filter(item => item.tanggal === tanggal);
 }
 
 async function DB_addAttendance(data) {
-    const docRef = await attendancesRef.add(data);
-    return docRef.id;
+    const all = getLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES);
+    const newDocId = `ABS-${Date.now()}`;
+    const newRecord = { docId: newDocId, ...data };
+    all.unshift(newRecord);
+    setLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES, all);
+
+    if (isFirestoreAvailable !== false && attendancesRef) {
+        try {
+            const docRef = await attendancesRef.add(data);
+            newRecord.docId = docRef.id;
+        } catch (e) {
+            console.warn('DB_addAttendance Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
+
+    return newRecord.docId;
 }
 
 async function DB_updateAttendance(docId, data) {
-    await attendancesRef.doc(docId).update(data);
+    const all = getLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES);
+    const idx = all.findIndex(a => a.docId === docId);
+    if (idx >= 0) {
+        all[idx] = { ...all[idx], ...data };
+        setLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES, all);
+    }
+
+    if (isFirestoreAvailable !== false && attendancesRef) {
+        try {
+            await attendancesRef.doc(docId).update(data);
+        } catch (e) {
+            console.warn('DB_updateAttendance Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
+}
+
+async function DB_deleteAttendance(docId) {
+    let all = getLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES);
+    all = all.filter(a => a.docId !== docId);
+    setLocalData(LOCAL_STORAGE_KEYS.ATTENDANCES, all);
+
+    if (isFirestoreAvailable !== false && attendancesRef) {
+        try {
+            await attendancesRef.doc(docId).delete();
+        } catch (e) {
+            console.warn('DB_deleteAttendance Firestore sync error:', e.message);
+            isFirestoreAvailable = false;
+        }
+    }
 }
 
 async function DB_getAttendancesByMonth(bulan, tahun) {
-    // We need to filter client-side since tanggal is stored as DD/MM/YYYY string
-    const snapshot = await attendancesRef.get();
-    return snapshot.docs
-        .map(doc => ({ docId: doc.id, ...doc.data() }))
-        .filter(item => {
-            const parts = item.tanggal.split('/');
-            const itemBulan = parseInt(parts[1]);
-            const itemTahun = parseInt(parts[2]);
-            return itemBulan === bulan && itemTahun === tahun;
-        });
+    const all = await DB_getAllAttendances();
+    return all.filter(item => {
+        if (!item.tanggal) return false;
+        const parts = item.tanggal.split('/');
+        if (parts.length < 3) return false;
+        const itemBulan = parseInt(parts[1], 10);
+        const itemTahun = parseInt(parts[2], 10);
+        return itemBulan === bulan && itemTahun === tahun;
+    });
 }
 
 async function DB_getAttendanceByUserAndDate(username, dateStr) {
-    // dateStr format: "DD/MM/YYYY"
-    // username is actually nama field
-    const snapshot = await attendancesRef
-        .where('nama', '==', username)
-        .where('tanggal', '==', dateStr)
-        .get();
-    if (snapshot.empty) return null;
-    const doc = snapshot.docs[0];
-    return { docId: doc.id, ...doc.data() };
+    const all = await DB_getAllAttendances();
+    const found = all.find(item => item.nama === username && item.tanggal === dateStr);
+    return found || null;
 }
 
 async function DB_getAttendancesByUser(nama) {
-    const snapshot = await attendancesRef.where('nama', '==', nama).get();
-    return snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+    const all = await DB_getAllAttendances();
+    return all.filter(item => item.nama === nama);
 }
 
 // Run seed on load
 seedDatabase();
+

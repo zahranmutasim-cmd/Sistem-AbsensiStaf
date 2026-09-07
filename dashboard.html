@@ -127,10 +127,10 @@
                     <!-- Profile -->
                     <div class="profile-wrapper">
                         <button class="profile-btn" id="profileBtn">
-                            <div class="profile-avatar">AD</div>
+                            <div class="profile-avatar" id="adminAvatar">AD</div>
                             <div class="profile-info">
-                                <div class="name">Admin</div>
-                                <div class="role">Administrator</div>
+                                <div class="name" id="adminName">Admin</div>
+                                <div class="role" id="adminRole">Administrator</div>
                             </div>
                             <i data-lucide="chevron-down" class="chevron"></i>
                         </button>
@@ -166,11 +166,11 @@
                             <i data-lucide="users"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>150</h3>
+                            <h3 id="statTotalKaryawan">0</h3>
                             <p>Total Karyawan</p>
                             <span class="stat-change up">
                                 <i data-lucide="trending-up" style="width:12px;height:12px;"></i>
-                                +3 bulan ini
+                                <span id="statKaryawanSub">Aktif</span>
                             </span>
                         </div>
                     </div>
@@ -181,11 +181,11 @@
                             <i data-lucide="user-check"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>142</h3>
+                            <h3 id="statHadirHariIni">0</h3>
                             <p>Hadir Hari Ini</p>
                             <span class="stat-change up">
                                 <i data-lucide="trending-up" style="width:12px;height:12px;"></i>
-                                94.7%
+                                <span id="statHadirPersen">0%</span>
                             </span>
                         </div>
                     </div>
@@ -196,11 +196,11 @@
                             <i data-lucide="calendar-check"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>5</h3>
+                            <h3 id="statIzinHariIni">0</h3>
                             <p>Izin Hari Ini</p>
                             <span class="stat-change down">
-                                <i data-lucide="trending-down" style="width:12px;height:12px;"></i>
-                                3.3%
+                                <i data-lucide="info" style="width:12px;height:12px;"></i>
+                                <span id="statIzinPersen">0%</span>
                             </span>
                         </div>
                     </div>
@@ -211,11 +211,11 @@
                             <i data-lucide="thermometer"></i>
                         </div>
                         <div class="stat-info">
-                            <h3>3</h3>
+                            <h3 id="statSakitHariIni">0</h3>
                             <p>Sakit Hari Ini</p>
                             <span class="stat-change down">
-                                <i data-lucide="trending-down" style="width:12px;height:12px;"></i>
-                                2.0%
+                                <i data-lucide="info" style="width:12px;height:12px;"></i>
+                                <span id="statSakitPersen">0%</span>
                             </span>
                         </div>
                     </div>
@@ -259,7 +259,7 @@
                                     </div>
                                     <div class="quick-info-text">
                                         <h4>Tingkat Kehadiran</h4>
-                                        <p>94.7% minggu ini</p>
+                                        <p id="quickTingkatKehadiran">0%</p>
                                     </div>
                                 </div>
                                 <div class="quick-info-item">
@@ -268,7 +268,7 @@
                                     </div>
                                     <div class="quick-info-text">
                                         <h4>Pengajuan Izin Pending</h4>
-                                        <p>3 pengajuan menunggu</p>
+                                        <p id="quickIzinPending">0 pengajuan menunggu</p>
                                     </div>
                                 </div>
                                 <div class="quick-info-item">
@@ -277,7 +277,7 @@
                                     </div>
                                     <div class="quick-info-text">
                                         <h4>Karyawan Terlambat</h4>
-                                        <p>2 orang hari ini</p>
+                                        <p id="quickKaryawanTerlambat">0 orang hari ini</p>
                                     </div>
                                 </div>
                                 <div class="quick-info-item">

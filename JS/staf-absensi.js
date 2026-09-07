@@ -252,20 +252,27 @@ function closeQRScanner() {
     document.getElementById('manualCodeInput').value = '';
 }
 
+function isValidQR(code) {
+    const clean = (code || '').trim().toUpperCase();
+    return clean === COMPANY_QR_CODE || clean.startsWith('ZRAN-EMP:') || clean.startsWith('KRY-');
+}
+
 function onQRCodeScanned(decodedText) {
-    if (decodedText.trim().toUpperCase() === COMPANY_QR_CODE) {
+    if (isValidQR(decodedText)) {
         if (html5QrCode && html5QrCode.isScanning) {
             html5QrCode.stop().catch(() => { });
         }
         processAttendance();
     } else {
         const instruction = document.querySelector('.qr-instruction');
-        instruction.textContent = '❌ QR Code tidak valid! Gunakan QR Code perusahaan.';
-        instruction.style.color = '#dc2626';
-        setTimeout(() => {
-            instruction.textContent = 'Arahkan kamera ke QR Code perusahaan untuk konfirmasi absensi';
-            instruction.style.color = '#64748b';
-        }, 3000);
+        if (instruction) {
+            instruction.textContent = '❌ QR Code tidak valid! Gunakan QR Code perusahaan atau kartu staf.';
+            instruction.style.color = '#dc2626';
+            setTimeout(() => {
+                instruction.textContent = 'Arahkan kamera ke QR Code perusahaan untuk konfirmasi absensi';
+                instruction.style.color = '#64748b';
+            }, 3000);
+        }
     }
 }
 
@@ -283,7 +290,7 @@ function handleManualCode() {
         return;
     }
 
-    if (code === COMPANY_QR_CODE) {
+    if (isValidQR(code)) {
         processAttendance();
     } else {
         input.style.borderColor = '#dc2626';

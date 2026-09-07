@@ -1,18 +1,51 @@
 /* ==============================
    Dashboard — Sistem Absensi Karyawan
    JavaScript Logic (dashboard.js)
-   FIREBASE EDITION
+   HYBRID EDITION: Firebase + LocalStorage
    ============================== */
 
-// ========== Initialize Icons ==========
+// ========== Auth Check & User Profile ==========
+function checkAuth() {
+    const raw = localStorage.getItem('loggedInUser');
+    if (!raw) {
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+    try {
+        const user = JSON.parse(raw);
+        if (user.role === 'staf') {
+            window.location.href = 'staf-absensi.html';
+            return null;
+        }
+        const nameEl = document.getElementById('adminName');
+        const roleEl = document.getElementById('adminRole');
+        const avatarEl = document.getElementById('adminAvatar');
+        if (nameEl) nameEl.textContent = user.nama || 'Administrator';
+        if (roleEl) roleEl.textContent = (user.role === 'admin' ? 'Administrator' : user.role);
+        if (avatarEl) {
+            const initials = (user.nama || 'AD').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarEl.textContent = initials;
+        }
+        return user;
+    } catch (e) {
+        localStorage.removeItem('loggedInUser');
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+}
+
+// ========== Initialize Dashboard ==========
 document.addEventListener('DOMContentLoaded', async () => {
+    if (!checkAuth()) return;
     lucide.createIcons();
     initSidebar();
     initProfileDropdown();
     initDateTime();
+    await updateDashboardStats();
     await initChart();
     await renderTable();
 });
+
 
 // ========== Sidebar Toggle (Mobile) ==========
 function initSidebar() {
@@ -67,6 +100,75 @@ function initDateTime() {
 
     update();
     setInterval(update, 60000);
+}
+
+// ========== Update Dashboard Stats Dinamis ==========
+async function updateDashboardStats() {
+    try {
+        const allKaryawan = await DB_getAllKaryawan();
+        const totalKaryawan = allKaryawan.length;
+        const totalAktif = allKaryawan.filter(k => k.status === 'Aktif').length;
+
+        const now = new Date();
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yyyy = now.getFullYear();
+        const todayStr = `${dd}/${mm}/${yyyy}`;
+
+        let todayData = await DB_getAttendancesByDate(todayStr);
+        if (todayData.length === 0) {
+            const allAttendances = await DB_getAllAttendances();
+            if (allAttendances.length > 0) {
+                const uniqueDates = [...new Set(allAttendances.map(a => a.tanggal))];
+                uniqueDates.sort((a, b) => {
+                    const [dA, mA, yA] = a.split('/');
+                    const [dB, mB, yB] = b.split('/');
+                    return new Date(yB, mB - 1, dB) - new Date(yA, mA - 1, dA);
+                });
+                const latestDate = uniqueDates[0];
+                todayData = allAttendances.filter(a => a.tanggal === latestDate);
+            }
+        }
+
+        const hadir = todayData.filter(d => d.status === 'Hadir').length;
+        const terlambat = todayData.filter(d => d.status === 'Terlambat').length;
+        const totalHadir = hadir + terlambat;
+        const izin = todayData.filter(d => d.status === 'Izin').length;
+        const sakit = todayData.filter(d => d.status === 'Sakit').length;
+
+        const divisor = totalAktif > 0 ? totalAktif : (totalKaryawan || 1);
+        const hadirPersen = ((totalHadir / divisor) * 100).toFixed(1);
+        const izinPersen = ((izin / divisor) * 100).toFixed(1);
+        const sakitPersen = ((sakit / divisor) * 100).toFixed(1);
+
+        const elTotal = document.getElementById('statTotalKaryawan');
+        const elSub = document.getElementById('statKaryawanSub');
+        const elHadir = document.getElementById('statHadirHariIni');
+        const elHadirPersen = document.getElementById('statHadirPersen');
+        const elIzin = document.getElementById('statIzinHariIni');
+        const elIzinPersen = document.getElementById('statIzinPersen');
+        const elSakit = document.getElementById('statSakitHariIni');
+        const elSakitPersen = document.getElementById('statSakitPersen');
+
+        if (elTotal) elTotal.textContent = totalKaryawan;
+        if (elSub) elSub.textContent = `${totalAktif} Aktif`;
+        if (elHadir) elHadir.textContent = totalHadir;
+        if (elHadirPersen) elHadirPersen.textContent = `${hadirPersen}%`;
+        if (elIzin) elIzin.textContent = izin;
+        if (elIzinPersen) elIzinPersen.textContent = `${izinPersen}%`;
+        if (elSakit) elSakit.textContent = sakit;
+        if (elSakitPersen) elSakitPersen.textContent = `${sakitPersen}%`;
+
+        // Quick info
+        const qKehadiran = document.getElementById('quickTingkatKehadiran');
+        const qTerlambat = document.getElementById('quickKaryawanTerlambat');
+        const qIzin = document.getElementById('quickIzinPending');
+        if (qKehadiran) qKehadiran.textContent = `${hadirPersen}% hari ini`;
+        if (qTerlambat) qTerlambat.textContent = `${terlambat} orang hari ini`;
+        if (qIzin) qIzin.textContent = `${izin} izin tercatat`;
+    } catch (e) {
+        console.error('Failed to update dashboard stats:', e);
+    }
 }
 
 // ========== Chart.js — Weekly Attendance (from Firebase) ==========

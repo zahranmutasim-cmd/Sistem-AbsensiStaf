@@ -1,9 +1,26 @@
-const CACHE_NAME = 'zran-absensi-v2';
+const CACHE_NAME = 'zran-absensi-v3';
 const ASSETS_TO_CACHE = [
   './',
+  './halaman%20Login.html',
+  './dashboard.html',
+  './Data%20Karyawan.html',
+  './Absensi.html',
+  './Laporan.html',
   './staf-absensi.html',
+  './Css/dashboard.css',
+  './Css/data-karyawan.css',
+  './Css/absensi.css',
+  './Css/laporan.css',
+  './Css/staf-absensi.css',
+  './JS/firebase-config.js',
+  './JS/dashboard.js',
+  './JS/data-karyawan.js',
+  './JS/absensi.js',
+  './JS/laporan.js',
   './JS/staf-absensi.js',
-  './JS/firebase-config.js'
+  './manifest.json',
+  './LOGO%20saja%20.png',
+  './Logo%20Company.png'
 ];
 
 // Install Service Worker & Pre-cache
@@ -12,11 +29,11 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
-        console.log('SW: Caching app shell');
+        console.log('SW: Pre-caching app shell');
         return cache.addAll(ASSETS_TO_CACHE);
       })
       .catch(err => {
-        console.warn('SW: Cache addAll gagal (mungkin offline), lanjut saja', err);
+        console.warn('SW: Cache addAll skipped or partial:', err);
       })
   );
 });
@@ -38,22 +55,34 @@ self.addEventListener('activate', event => {
   return self.clients.claim();
 });
 
-// Network-first strategy (selalu coba ambil dari internet dulu, 
-// baru fallback ke cache kalau offline)
+// Network-first strategy with safe caching for GET requests
 self.addEventListener('fetch', event => {
+  const req = event.request;
+
+  // Caching hanya untuk GET dan protokol http/https
+  if (req.method !== 'GET' || !req.url.startsWith('http')) {
+    return;
+  }
+
+  // Abaikan request streaming/Firestore/googleapis dari cache
+  if (req.url.includes('firestore.googleapis.com') || req.url.includes('identitytoolkit')) {
+    return;
+  }
+
   event.respondWith(
-    fetch(event.request)
+    fetch(req)
       .then(response => {
-        // Simpan copy response ke cache untuk offline fallback
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseClone);
-        });
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(req, responseClone).catch(() => {});
+          });
+        }
         return response;
       })
       .catch(() => {
-        // Kalau offline, ambil dari cache
-        return caches.match(event.request);
+        return caches.match(req);
       })
   );
 });
+

@@ -20,30 +20,74 @@ const statusConfig = {
     'Alpha': { bg: '#f3f4f6', color: '#6b7280', icon: 'x-circle' },
 };
 
-// Mapping karyawan → departemen
-const karyawanDepartemen = {
-    'Ahmad Fauzi': 'IT', 'Budi Santoso': 'HR', 'Citra Dewi': 'Finance',
-    'Dedi Kurniawan': 'IT', 'Eka Putri': 'Marketing', 'Fajar Hidayat': 'Operasional',
-    'Gita Rahayu': 'Finance', 'Hendra Wijaya': 'IT', 'Indah Permata': 'HR',
-    'Joko Widodo': 'Marketing', 'Kartika Sari': 'IT', 'Lukman Hakim': 'Finance',
-    'Maya Anggraini': 'HR', 'Nugroho Adi': 'Operasional', 'Oktavia Salsabila': 'Marketing',
-    'Putra Ramadhan': 'IT', 'Qory Sandrina': 'Finance', 'Rizky Pratama': 'HR',
-    'Siti Nurhaliza': 'Marketing', 'Teguh Prabowo': 'Operasional',
-};
+// Dynamic mapping karyawan → departemen
+let karyawanDepartemen = {};
 
 let absensiData = [];
 let filteredData = [];
 let editingDocId = null;
 
+// ========== Auth Check & User Profile ==========
+function checkAuth() {
+    const raw = localStorage.getItem('loggedInUser');
+    if (!raw) {
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+    try {
+        const user = JSON.parse(raw);
+        if (user.role === 'staf') {
+            window.location.href = 'staf-absensi.html';
+            return null;
+        }
+        const nameEl = document.getElementById('adminName');
+        const roleEl = document.getElementById('adminRole');
+        const avatarEl = document.getElementById('adminAvatar');
+        if (nameEl) nameEl.textContent = user.nama || 'Administrator';
+        if (roleEl) roleEl.textContent = (user.role === 'admin' ? 'Administrator' : user.role);
+        if (avatarEl) {
+            const initials = (user.nama || 'AD').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarEl.textContent = initials;
+        }
+        return user;
+    } catch (e) {
+        localStorage.removeItem('loggedInUser');
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+}
+
 // ========== Init ==========
 document.addEventListener('DOMContentLoaded', async () => {
+    if (!checkAuth()) return;
     lucide.createIcons();
+    await loadKaryawanList();
     await loadAbsensi();
     initFilters();
     initModal();
     initSidebar();
     initProfileDropdown();
 });
+
+// ========== Load Karyawan List for Dropdown ==========
+async function loadKaryawanList() {
+    try {
+        const list = await DB_getAllKaryawan();
+        const select = document.getElementById('inputKaryawan');
+        if (!select) return;
+
+        select.innerHTML = '<option value="">-- Pilih Karyawan --</option>';
+        list.forEach(k => {
+            karyawanDepartemen[k.nama] = k.departemen;
+            const opt = document.createElement('option');
+            opt.value = k.nama;
+            opt.textContent = `${k.nama} (${k.departemen} - ${k.jabatan})`;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Failed to load karyawan for dropdown:', e);
+    }
+}
 
 // ========== Load from Firebase ==========
 async function loadAbsensi() {
@@ -189,6 +233,9 @@ function renderTable() {
                         <button class="action-btn edit" title="Edit" onclick="editAbsensi('${item.docId}')">
                             <i data-lucide="pencil"></i>
                         </button>
+                        <button class="action-btn delete" title="Hapus" onclick="deleteAbsensi('${item.docId}')">
+                            <i data-lucide="trash-2"></i>
+                        </button>
                     </div>
                 </td>
             </tr>`;
@@ -292,7 +339,8 @@ function viewDetail(docId) {
     const totalJam = calculateTotalJam(item.jamMasuk, item.jamKeluar);
 
     alert(
-        `Detail Absensi\n\n` +
+        `📋 DETAIL CATATAN ABSENSI\n` +
+        `----------------------------------------\n` +
         `Nama: ${item.nama}\n` +
         `Departemen: ${item.departemen}\n` +
         `Tanggal: ${item.tanggal}\n` +
@@ -302,6 +350,22 @@ function viewDetail(docId) {
         `Status: ${item.status}\n` +
         `Keterangan: ${item.keterangan || '-'}`
     );
+}
+
+async function deleteAbsensi(docId) {
+    const item = absensiData.find(d => d.docId === docId);
+    const namaStr = item ? `absensi "${item.nama}" tanggal ${item.tanggal}` : 'catatan absensi ini';
+
+    if (confirm(`Hapus ${namaStr}?\n\nTindakan ini tidak dapat dibatalkan.`)) {
+        try {
+            await DB_deleteAttendance(docId);
+            showToast('Catatan absensi berhasil dihapus.');
+            await loadAbsensi();
+        } catch (e) {
+            console.error('Delete absensi error:', e);
+            showToast('Gagal menghapus data absensi.', 'error');
+        }
+    }
 }
 
 function editAbsensi(docId) {

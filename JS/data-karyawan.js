@@ -18,8 +18,39 @@ let karyawanData = [];
 let filteredData = [];
 let editingId = null;
 
+// ========== Auth Check & User Profile ==========
+function checkAuth() {
+    const raw = localStorage.getItem('loggedInUser');
+    if (!raw) {
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+    try {
+        const user = JSON.parse(raw);
+        if (user.role === 'staf') {
+            window.location.href = 'staf-absensi.html';
+            return null;
+        }
+        const nameEl = document.getElementById('adminName');
+        const roleEl = document.getElementById('adminRole');
+        const avatarEl = document.getElementById('adminAvatar');
+        if (nameEl) nameEl.textContent = user.nama || 'Administrator';
+        if (roleEl) roleEl.textContent = (user.role === 'admin' ? 'Administrator' : user.role);
+        if (avatarEl) {
+            const initials = (user.nama || 'AD').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+            avatarEl.textContent = initials;
+        }
+        return user;
+    } catch (e) {
+        localStorage.removeItem('loggedInUser');
+        window.location.href = 'halaman Login.html';
+        return null;
+    }
+}
+
 // ========== Init ==========
 document.addEventListener('DOMContentLoaded', async () => {
+    if (!checkAuth()) return;
     lucide.createIcons();
     await loadKaryawan();
     initSearch();
@@ -116,7 +147,7 @@ function renderTable() {
     if (pageData.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8">
+                <td colspan="9">
                     <div class="empty-state">
                         <i data-lucide="search-x"></i>
                         <p>Tidak ada data karyawan ditemukan</p>
@@ -150,6 +181,12 @@ function renderTable() {
                 <td>${k.departemen}</td>
                 <td>${k.telp}</td>
                 <td>${statusBadge}</td>
+                <td>
+                    <button class="btn-qr-badge" onclick="showEmployeeQR('${k.id}')" title="Lihat Kartu QR Absensi">
+                        <i data-lucide="qr-code"></i>
+                        <span>Lihat QR</span>
+                    </button>
+                </td>
                 <td>
                     <div class="action-btns">
                         <button class="action-btn detail" title="Detail" onclick="viewDetail('${k.id}')">
@@ -249,6 +286,9 @@ function initModal() {
 
 function openModal() {
     editingId = null;
+    const titleEl = document.getElementById('modalTitle');
+    if (titleEl) titleEl.textContent = 'Tambah Karyawan Baru';
+    document.getElementById('addKaryawanForm')?.reset();
     const overlay = document.getElementById('modalOverlay');
     if (overlay) {
         overlay.classList.add('show');
@@ -272,24 +312,31 @@ async function handleSaveKaryawan() {
     const telp = document.getElementById('inputTelp')?.value.trim();
     const jabatan = document.getElementById('inputJabatan')?.value;
     const departemen = document.getElementById('inputDepartemen')?.value;
-    const alamat = document.getElementById('inputAlamat')?.value.trim();
+    const alamat = document.getElementById('inputAlamat')?.value.trim() || '';
+    const status = document.getElementById('inputStatus')?.value || 'Aktif';
 
-    if (!nama || !email || !telp || !jabatan || !departemen) {
-        alert('Mohon lengkapi semua field yang wajib diisi!');
+    if (!nama || !telp || !jabatan || !departemen) {
+        alert('Mohon lengkapi field yang wajib diisi (Nama, Telepon, Jabatan, Departemen)!');
         return;
     }
+
+    const finalEmail = email || `${nama.toLowerCase().replace(/[^a-z0-9]/g, '.')}@zrancorp.com`;
 
     try {
         if (editingId) {
             // Update existing
             await DB_updateKaryawan(editingId, {
-                nama, jabatan, departemen, telp
+                nama, jabatan, departemen, telp, email: finalEmail, alamat, status
             });
-            showToast(`Data "${nama}" berhasil diperbarui!`);
+            showToast(`Data karyawan "${nama}" berhasil diperbarui!`);
         } else {
-            // Generate new ID
-            const count = await DB_getKaryawanCount();
-            const newId = `KRY-${String(count + 1).padStart(3, '0')}`;
+            // Generate safe max ID
+            const allK = await DB_getAllKaryawan();
+            const maxIdNum = allK.reduce((max, curr) => {
+                const num = parseInt((curr.id || '').replace('KRY-', ''), 10) || 0;
+                return num > max ? num : max;
+            }, 0);
+            const newId = `KRY-${String(maxIdNum + 1).padStart(3, '0')}`;
 
             await DB_addKaryawan({
                 id: newId,
@@ -297,16 +344,18 @@ async function handleSaveKaryawan() {
                 jabatan,
                 departemen,
                 telp,
-                status: 'Aktif'
+                email: finalEmail,
+                alamat,
+                status
             });
-            showToast(`Karyawan "${nama}" berhasil ditambahkan!`);
+            showToast(`Karyawan "${nama}" (${newId}) berhasil ditambahkan!`);
         }
 
         closeModal();
         await loadKaryawan();
     } catch (e) {
         console.error('Save error:', e);
-        showToast('Gagal menyimpan data. Periksa koneksi internet.', 'error');
+        showToast('Gagal menyimpan data karyawan.', 'error');
     }
 }
 
@@ -314,7 +363,19 @@ async function handleSaveKaryawan() {
 function viewDetail(id) {
     const k = karyawanData.find(x => x.id === id);
     if (!k) return;
-    alert(`📋 Detail Karyawan\n\nID: ${k.id}\nNama: ${k.nama}\nJabatan: ${k.jabatan}\nDepartemen: ${k.departemen}\nTelepon: ${k.telp}\nStatus: ${k.status}`);
+    alert(
+        `📋 DETAIL KARYAWAN\n` +
+        `----------------------------------------\n` +
+        `ID: ${k.id}\n` +
+        `Nama: ${k.nama}\n` +
+        `Jabatan: ${k.jabatan}\n` +
+        `Departemen: ${k.departemen}\n` +
+        `Telepon: ${k.telp}\n` +
+        `Email: ${k.email || '-'}\n` +
+        `Alamat: ${k.alamat || '-'}\n` +
+        `Status: ${k.status}\n` +
+        `Kode QR Absen: ZRAN-EMP:${k.id}`
+    );
 }
 
 function editKaryawan(id) {
@@ -322,34 +383,129 @@ function editKaryawan(id) {
     if (!k) return;
 
     editingId = id;
+    const titleEl = document.getElementById('modalTitle');
+    if (titleEl) titleEl.textContent = 'Edit Data Karyawan';
 
     // Pre-fill form
     const inputNama = document.getElementById('inputNama');
+    const inputEmail = document.getElementById('inputEmail');
     const inputTelp = document.getElementById('inputTelp');
     const inputJabatan = document.getElementById('inputJabatan');
     const inputDepartemen = document.getElementById('inputDepartemen');
+    const inputStatus = document.getElementById('inputStatus');
+    const inputAlamat = document.getElementById('inputAlamat');
 
-    if (inputNama) inputNama.value = k.nama;
-    if (inputTelp) inputTelp.value = k.telp;
-    if (inputJabatan) inputJabatan.value = k.jabatan;
-    if (inputDepartemen) inputDepartemen.value = k.departemen;
+    if (inputNama) inputNama.value = k.nama || '';
+    if (inputEmail) inputEmail.value = k.email || '';
+    if (inputTelp) inputTelp.value = k.telp || '';
+    if (inputJabatan) inputJabatan.value = k.jabatan || '';
+    if (inputDepartemen) inputDepartemen.value = k.departemen || '';
+    if (inputStatus) inputStatus.value = k.status || 'Aktif';
+    if (inputAlamat) inputAlamat.value = k.alamat || '';
 
-    openModal();
+    const overlay = document.getElementById('modalOverlay');
+    if (overlay) {
+        overlay.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
 }
 
 async function deleteKaryawan(id) {
     const k = karyawanData.find(x => x.id === id);
     if (!k) return;
-    if (confirm(`Hapus karyawan "${k.nama}"?\n\nTindakan ini tidak dapat dibatalkan.`)) {
+    if (confirm(`Hapus karyawan "${k.nama}" (${k.id})?\n\nTindakan ini tidak dapat dibatalkan.`)) {
         try {
             await DB_deleteKaryawan(id);
             showToast(`Karyawan "${k.nama}" berhasil dihapus.`);
             await loadKaryawan();
         } catch (e) {
             console.error('Delete error:', e);
-            showToast('Gagal menghapus data. Periksa koneksi internet.', 'error');
+            showToast('Gagal menghapus data.', 'error');
         }
     }
+}
+
+// ========== Fitur QR Code Karyawan ==========
+function showEmployeeQR(id) {
+    const k = karyawanData.find(x => x.id === id);
+    if (!k) return;
+
+    const nameEl = document.getElementById('qrModalName');
+    const idEl = document.getElementById('qrModalId');
+    const deptEl = document.getElementById('qrModalDept');
+    const codeEl = document.getElementById('qrModalCode');
+    const container = document.getElementById('employeeQrContainer');
+
+    if (nameEl) nameEl.textContent = k.nama;
+    if (idEl) idEl.textContent = k.id;
+    if (deptEl) deptEl.textContent = `${k.departemen} • ${k.jabatan}`;
+
+    // Format kode QR unik per karyawan yang didukung oleh scanner staf
+    const qrData = `ZRAN-EMP:${k.id}`;
+    if (codeEl) codeEl.textContent = qrData;
+
+    if (container) {
+        container.innerHTML = '';
+        if (typeof QRCode !== 'undefined') {
+            new QRCode(container, {
+                text: qrData,
+                width: 160,
+                height: 160,
+                colorDark: "#1e293b",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        } else {
+            container.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrData)}" alt="QR Code" style="width:160px;height:160px;">`;
+        }
+    }
+
+    const overlay = document.getElementById('qrModalOverlay');
+    if (overlay) {
+        overlay.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+    lucide.createIcons();
+}
+
+function closeQRModal() {
+    const overlay = document.getElementById('qrModalOverlay');
+    if (overlay) {
+        overlay.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+}
+
+function printEmployeeQR() {
+    const printArea = document.getElementById('qrPrintArea');
+    if (!printArea) return;
+
+    const printWin = window.open('', '', 'width=650,height=650');
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Cetak QR Code Karyawan - Zran Corporation</title>
+            <style>
+                body { font-family: 'Segoe UI', Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 95vh; margin: 0; background: #f8fafc; }
+                .card { width: 320px; border: 2px solid #1e3a5f; border-radius: 16px; padding: 24px; text-align: center; background: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+                img { max-width: 100%; }
+                h3 { margin: 10px 0 2px 0; color: #1e293b; font-size: 16px; }
+                p { margin: 2px 0; font-size: 12px; color: #64748b; }
+                code { background: #eff6ff; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px; color: #2563eb; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                ${printArea.innerHTML}
+            </div>
+            <script>
+                window.onload = function() { window.print(); window.close(); };
+            <\/script>
+        </body>
+        </html>
+    `);
+    printWin.document.close();
 }
 
 // ========== Toast Notification ==========
